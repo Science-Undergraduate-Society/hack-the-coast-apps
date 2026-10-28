@@ -32,6 +32,8 @@ export default function ApplicationPage() {
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [loadError, setLoadError] = useState("");
+  const [testingSheets, setTestingSheets] = useState(false);
+  const [sheetsMessage, setSheetsMessage] = useState("");
 
   // Track edits so loading a draft doesn't trigger autosave.
   const versionRef = useRef(0);
@@ -40,16 +42,20 @@ export default function ApplicationPage() {
   // Keep Firestore writes in order.
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  // Load the current applicant's saved draft.
+  // Load the applicant's saved draft.
   useEffect(() => {
     let active = true;
+    let requestId = 0;
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      const id = ++requestId;
+
       setLoading(true);
       setUser(currentUser);
       setDraft({ ...emptyDraft });
       setLoadError("");
       setSaveStatus("saved");
+      setSheetsMessage("");
       versionRef.current = 0;
       savedVersionRef.current = 0;
 
@@ -63,7 +69,11 @@ export default function ApplicationPage() {
           doc(db, "applications", currentUser.uid)
         );
 
-        if (!active || auth.currentUser?.uid !== currentUser.uid) {
+        if (
+          !active ||
+          id !== requestId ||
+          auth.currentUser?.uid !== currentUser.uid
+        ) {
           return;
         }
 
@@ -73,13 +83,13 @@ export default function ApplicationPage() {
       } catch (error) {
         console.error("Failed to load application:", error);
 
-        if (active) {
+        if (active && id === requestId) {
           setLoadError(
             "Could not load your application. Please refresh before editing."
           );
         }
       } finally {
-        if (active && auth.currentUser?.uid === currentUser.uid) {
+        if (active && id === requestId) {
           setLoading(false);
         }
       }
@@ -87,6 +97,7 @@ export default function ApplicationPage() {
 
     return () => {
       active = false;
+      requestId++;
       unsubscribe();
     };
   }, []);
@@ -111,19 +122,22 @@ export default function ApplicationPage() {
 
       const userId = user.uid;
 
-      // Skip if this version has already been saved.
       if (version <= savedVersionRef.current) return;
 
       setSaveStatus("saving");
 
+      // Serialize writes to avoid older saves overwriting newer ones.
       const operation = saveQueueRef.current
         .catch(() => {
-          // Allow later saves even if an earlier save failed.
+          // A failed save should not block later attempts.
         })
         .then(async () => {
           if (auth.currentUser?.uid !== userId) return;
 
-          await setDoc(doc(db, "applications", userId), snapshot);
+          await setDoc(
+            doc(db, "applications", userId),
+            snapshot
+          );
 
           if (auth.currentUser?.uid !== userId) return;
 
@@ -155,7 +169,7 @@ export default function ApplicationPage() {
     [user, loadError]
   );
 
-  // Autosave one second after the latest edit.
+  // Autosave one second after the applicant stops typing.
   useEffect(() => {
     if (loading || !user || loadError) return;
     if (saveStatus !== "unsaved") return;
@@ -170,8 +184,59 @@ export default function ApplicationPage() {
     return () => window.clearTimeout(timer);
   }, [draft, user, loading, loadError, saveStatus, saveDraft]);
 
+  // Send a test request to the Google Sheets backend.
+  async function testGoogleSheets() {
+    if (testingSheets) return;
+
+    setTestingSheets(true);
+    setSheetsMessage("");
+
+    try {
+      const currentUser = auth.currentUser;
+
+      if (!currentUser) {
+        throw new Error("Please sign in first.");
+      }
+
+      const token = await currentUser.getIdToken();
+
+      const response = await fetch("/api/sheets/test", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ?? "Google Sheets request failed."
+        );
+      }
+
+      setSheetsMessage(
+        "Success! A test row was added to Google Sheets."
+      );
+    } catch (error) {
+      console.error("Google Sheets test failed:", error);
+
+      setSheetsMessage(
+        error instanceof Error
+          ? `Google Sheets test failed: ${error.message}`
+          : "Google Sheets test failed."
+      );
+    } finally {
+      setTestingSheets(false);
+    }
+  }
+
   if (loading) {
-    return <main className="p-8">Loading your application...</main>;
+    return (
+      <main className="p-8">
+        Loading your application...
+      </main>
+    );
   }
 
   if (!user) {
@@ -180,8 +245,13 @@ export default function ApplicationPage() {
         <h1 className="mb-4 text-3xl font-bold">
           Hack the Coast Application
         </h1>
+
         <p>Please sign in to continue.</p>
-        <Link href="/login" className="mt-4 inline-block underline">
+
+        <Link
+          href="/login"
+          className="mt-4 inline-block underline"
+        >
           Go to Login
         </Link>
       </main>
@@ -191,7 +261,10 @@ export default function ApplicationPage() {
   if (loadError) {
     return (
       <main className="mx-auto max-w-xl p-8">
-        <h1 className="text-2xl font-bold">Unable to load application</h1>
+        <h1 className="text-2xl font-bold">
+          Unable to load application
+        </h1>
+
         <p role="alert" className="mt-4 text-red-600">
           {loadError}
         </p>
@@ -234,71 +307,137 @@ export default function ApplicationPage() {
 
       <section className="space-y-5">
         <div>
-          <label htmlFor="firstName" className="mb-2 block font-medium">
+          <label
+            htmlFor="firstName"
+            className="mb-2 block font-medium"
+          >
             First Name
           </label>
+
           <input
             id="firstName"
-            className="w-full rounded border p-3"
+            type="text"
             value={draft.firstName}
-            onChange={(e) => updateField("firstName", e.target.value)}
+            onChange={(e) =>
+              updateField("firstName", e.target.value)
+            }
+            placeholder="Enter your first name"
+            className="w-full rounded border p-3"
           />
         </div>
 
         <div>
-          <label htmlFor="lastName" className="mb-2 block font-medium">
+          <label
+            htmlFor="lastName"
+            className="mb-2 block font-medium"
+          >
             Last Name
           </label>
+
           <input
             id="lastName"
-            className="w-full rounded border p-3"
+            type="text"
             value={draft.lastName}
-            onChange={(e) => updateField("lastName", e.target.value)}
+            onChange={(e) =>
+              updateField("lastName", e.target.value)
+            }
+            placeholder="Enter your last name"
+            className="w-full rounded border p-3"
           />
         </div>
 
         <div>
-          <label htmlFor="school" className="mb-2 block font-medium">
+          <label
+            htmlFor="school"
+            className="mb-2 block font-medium"
+          >
             School
           </label>
+
           <input
             id="school"
-            className="w-full rounded border p-3"
+            type="text"
             value={draft.school}
-            onChange={(e) => updateField("school", e.target.value)}
+            onChange={(e) =>
+              updateField("school", e.target.value)
+            }
+            placeholder="e.g. University of British Columbia"
+            className="w-full rounded border p-3"
           />
         </div>
 
         <div>
-          <label htmlFor="whyAttend" className="mb-2 block font-medium">
+          <label
+            htmlFor="whyAttend"
+            className="mb-2 block font-medium"
+          >
             Why do you want to attend Hack the Coast?
           </label>
+
           <textarea
             id="whyAttend"
-            className="w-full rounded border p-3"
-            rows={5}
-            maxLength={300}
             value={draft.whyAttend}
-            onChange={(e) => updateField("whyAttend", e.target.value)}
+            onChange={(e) =>
+              updateField("whyAttend", e.target.value)
+            }
+            placeholder="Tell us why you're interested..."
+            maxLength={300}
+            rows={5}
+            className="w-full rounded border p-3"
           />
+
           <p className="mt-1 text-right text-sm opacity-60">
             {draft.whyAttend.length}/300 characters
           </p>
         </div>
       </section>
 
+      {/* Manual save backup */}
       <button
         type="button"
-        onClick={() => void saveDraft({ ...draft }, versionRef.current)}
+        onClick={() =>
+          void saveDraft({ ...draft }, versionRef.current)
+        }
         disabled={saveStatus === "saving"}
-        className="w-full rounded bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
+        className="w-full rounded bg-blue-600 px-5 py-3 font-medium text-white disabled:opacity-50"
       >
-        {saveStatus === "error" ? "Retry Save" : "Save Progress"}
+        {saveStatus === "error"
+          ? "Retry Save"
+          : "Save Progress"}
       </button>
 
       <p className="text-center text-sm opacity-60">
         Your changes are saved automatically after you stop typing.
       </p>
+
+      {/* Temporary Google Sheets test */}
+      <div className="space-y-3 border-t pt-6">
+        <h2 className="text-lg font-semibold">
+          Google Sheets Integration Test
+        </h2>
+
+        <p className="text-sm opacity-70">
+          This development-only button will append a test
+          applicant row to your Google Sheet.
+        </p>
+
+        <button
+          type="button"
+          onClick={testGoogleSheets}
+          disabled={testingSheets}
+          className="w-full rounded bg-green-600 px-5 py-3 font-medium text-white disabled:opacity-50"
+        >
+          {testingSheets
+            ? "Testing Connection..."
+            : "Test Google Sheets Connection"}
+        </button>
+
+        {sheetsMessage && (
+          <p role="status" className="text-sm">
+            {sheetsMessage}
+          </p>
+        )}
+      </div>
     </main>
   );
 }
