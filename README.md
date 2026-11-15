@@ -92,7 +92,7 @@ To deploy the rules (requires access to the Firebase project):
 
 ```bash
 npx firebase-tools login
-npx firebase-tools deploy --only firestore:rules --project <project-id>
+npx firebase-tools deploy --only firestore:rules --project htc-hack-application
 ```
 
 You can also paste the rules into Firebase console → Firestore Database → Rules and click **Publish**.
