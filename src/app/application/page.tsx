@@ -216,7 +216,7 @@ export default function ApplicationPage() {
       }
 
       setSheetsMessage(
-        "Success! A test row was added to Google Sheets."
+        "Success! A test row was written to Google Sheets."
       );
     } catch (error) {
       console.error("Google Sheets test failed:", error);
@@ -417,8 +417,8 @@ export default function ApplicationPage() {
         </h2>
 
         <p className="text-sm opacity-70">
-          This development-only button will append a test
-          applicant row to your Google Sheet.
+          This development-only button writes a test applicant
+          row for your account to the Google Sheet.
         </p>
 
         <button

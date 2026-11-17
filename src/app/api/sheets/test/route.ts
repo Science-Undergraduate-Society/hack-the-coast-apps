@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google } from "googleapis";
-import {
-  cert,
-  getApp,
-  getApps,
-  initializeApp,
-} from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import type { ApplicationRecord } from "@/lib/applicationSchema";
+import { getAdminAuth } from "@/lib/firebaseAdmin";
+import { upsertApplicationRow } from "@/lib/sheets";
 
 export const runtime = "nodejs";
 
@@ -21,60 +16,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-      ?.replace(/\\n/g, "\n");
-    const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+    const user = await getAdminAuth().verifyIdToken(authHeader.slice(7));
 
-    if (!projectId || !clientEmail || !privateKey || !spreadsheetId) {
-      throw new Error("Missing Google Sheets configuration");
-    }
+    // A fake application for the signed-in user. Running the test again
+    // updates the same row instead of adding a new one.
+    const testRecord: ApplicationRecord = {
+      uid: user.uid,
+      email: user.email ?? "",
+      status: "submitted",
+      submittedAt: new Date().toISOString(),
+      firstName: "Test",
+      lastName: "Applicant",
+      ageRange: "18–25",
+      pronouns: "they/them",
+      country: "Canada",
+      phone: "000-000-0000",
+      school: "University of British Columbia",
+      levelOfStudy: "Undergraduate University (3+ year)",
+      major: "Testing",
+      yearLevel: "2",
+      hackathonsAttended: 0,
+      dietaryRestrictions: "None",
+      referralSource: "Other",
+      resumeUrl: "",
+      hopeToLearn: "Testing Google Sheets integration",
+      recentChallenge: "Test answer",
+      teamRole: "Test answer",
+      favouriteBodyOfWater: "Test answer",
+      playlistSong: "",
+      consentUbcCoc: true,
+      consentMlhCoc: true,
+      consentMlhDataSharing: true,
+      consentSusEmails: false,
+      consentPhotos: false,
+      consentMlhMarketing: false,
+    };
 
-    const adminApp = getApps().length
-      ? getApp()
-      : initializeApp({
-          credential: cert({ projectId, clientEmail, privateKey }),
-        });
-
-    const user = await getAuth(adminApp).verifyIdToken(
-      authHeader.slice(7)
-    );
-
-    const googleAuth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: clientEmail,
-        private_key: privateKey,
-      },
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-
-    const sheets = google.sheets({
-      version: "v4",
-      auth: googleAuth,
-    });
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: "'Applications'!A:G",
-      valueInputOption: "RAW",
-      insertDataOption: "INSERT_ROWS",
-      requestBody: {
-        values: [[
-          user.uid,
-          "Test",
-          "Applicant",
-          user.email ?? "",
-          "UBC",
-          "Testing Google Sheets integration",
-          new Date().toISOString(),
-        ]],
-      },
-    });
+    await upsertApplicationRow(testRecord);
 
     return NextResponse.json({
       success: true,
-      message: "Test row added to Google Sheets!",
+      message: "Test row written to Google Sheets!",
     });
   } catch (error) {
     console.error("Google Sheets test failed:", error);

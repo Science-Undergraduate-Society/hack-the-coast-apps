@@ -4,8 +4,9 @@ rules_version = '2';
 //
 // These rules only apply to the client SDK (the browser). Server code that
 // uses the Firebase Admin SDK (e.g. API routes in src/app/api) bypasses them,
-// which is how the server moves an application from "draft" to
-// "submitted" / "accepted" / "rsvp".
+// which is how the server moves an application out of "draft" (to
+// "submitted", "accepted", "waitlisted", "rejected", "confirmed" or
+// "declined"). See src/lib/applicationSchema.ts for what each status means.
 //
 // Deploy with: npx firebase-tools deploy --only firestore:rules --project <project-id>
 
@@ -42,7 +43,7 @@ service cloud.firestore {
         && request.resource.data.status == 'draft';
 
       // Editing: only while it's still a draft, and the status can't change.
-      // Once the server marks it submitted/accepted/RSVP'd, the applicant
+      // Once the server moves it past "draft", the applicant
       // can no longer edit it.
       allow update: if isOwner()
         && hasOnlyDraftFields()
