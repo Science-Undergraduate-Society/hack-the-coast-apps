@@ -29,7 +29,10 @@
     "typescript": "^5"
   },
   "overrides": {
-    "@grpc/grpc-js": "^1.14.6"
+    "@grpc/grpc-js": "^1.14.6",
+    "jwks-rsa": {
+      "jose": "^5.10.0"
+    }
   },
   "engines": {
     "node": "24.x"
