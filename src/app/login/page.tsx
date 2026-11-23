@@ -92,6 +92,13 @@ export default function LoginPage() {
             Continue Application
           </Link>
 
+          <Link
+            href="/status"
+            className="rounded border p-3 text-center"
+          >
+            Check Application Status
+          </Link>
+
           <button
             onClick={() => signOut(auth)}
             className="rounded border p-3"
