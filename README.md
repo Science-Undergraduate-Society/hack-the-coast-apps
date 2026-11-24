@@ -45,10 +45,10 @@ cp .env.example .env
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Same place as above |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | `client_email` in the service account JSON (step 5) |
 | `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | `private_key` in the service account JSON (step 5) |
-| `GOOGLE_SHEETS_ID` | The club account's Google Sheet, where application data is written. Ask the tech lead. |
-| `SHEETS_RELEASE_SECRET` | Any long random string, e.g. from `openssl rand -hex 32`. Only needed to test [releasing decisions](#organizer-decisions) locally. The deployed app's value must match the Sheet's `RELEASE_SECRET`. |
+| `GOOGLE_SHEETS_ID` | The ID of your own copy of the Sheet ([step 6](#6-make-your-own-test-sheet)). Only the deployed app uses the club Sheet. |
+| `SHEETS_RELEASE_SECRET` | Generate your own for local dev with `openssl rand -hex 32`. Only needed to test [releasing decisions](#organizer-decisions) locally. The deployed app's value must match the club Sheet's `RELEASE_SECRET`. |
 
-The tech lead can also send you the Firebase config and sheet IDs directly.
+The dev lead can also send you the Firebase config directly.
 
 A sheet ID is the part of the sheet's URL between `/d/` and `/edit`:
 `https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit`
@@ -66,13 +66,19 @@ A sheet ID is the part of the sheet's URL between `/d/` and `/edit`:
 
 5. **Don't commit the JSON file.** Delete it, or store it outside the repo.
 
-### 6. Check sheet access
+### 6. Make your own test Sheet
 
-The club sheet (`GOOGLE_SHEETS_ID`) needs a tab named exactly `Applications`, and it must be shared with your `GOOGLE_SERVICE_ACCOUNT_EMAIL` with **Editor** access. Ask the tech lead if you get a permission error.
+Local dev writes to your own copy of the Sheet, never the club Sheet.
 
-The tab must be set up as described in [Setting up the Sheet](#setting-up-the-sheet-once-per-event).
+1. Open the club Sheet (ask the tech lead for access) and use File → **Make a copy**. Name it `HTC Applications – <your name> dev`. Leave **Share it with the same people** unticked.
+2. Share the copy with your `GOOGLE_SERVICE_ACCOUNT_EMAIL` as **Editor**, with **Notify people** unticked. Google warns that editors can modify and run the attached Apps Script. That's expected.
+3. Copying resets the protection so that only you can edit. Go to Data → Protect sheets and ranges → the `Applications` protection → **Change permissions**, and add the service account under **Custom**. Without this, the app's writes fail with a protected-cell error.
+4. Delete any applicant rows the copy brought over, leaving only the header row.
+5. The copy includes the "Hack the Coast Release" Apps Script and may include its script properties. In the copy, open Extensions → Apps Script → Project Settings → Script properties, and delete `RELEASE_URL` and `RELEASE_SECRET` if they're there. Otherwise the copy's **Release decisions** menu would call the live site, which releases decisions from the club Sheet. If Apps Script shows "unable to open the file", you're signed into several Google accounts. Open the copy in a window signed into only the owning account.
+6. Put the copy's ID in your `.env` as `GOOGLE_SHEETS_ID`.
+7. Generate your own `SHEETS_RELEASE_SECRET` with `openssl rand -hex 32`. Don't use the production secret locally. Test releases with the [curl command](#setting-up-the-sheet-once-per-event) against localhost (Apps Script can't reach `localhost`). An empty copy returns `{"released":0,"problems":[]}`.
 
-Note: the "Test Google Sheets Connection" button on the application page writes a fake "Test Applicant" row for your account to this sheet. Delete that row when you're done testing.
+In local dev, the application page shows a "Test Google Sheets Connection" button. It writes a fake "Test Applicant" row for your account to your copy. The button and its API route only work in local dev.
 
 ### 7. Run the app
 
@@ -116,7 +122,7 @@ Rules for releasing:
 
 ### Setting up the Sheet (once per event)
 
-Do this in the club account's Sheet.
+Do this in the club account's Sheet. Developers don't set up a Sheet from scratch; they copy the club Sheet instead (see [Make your own test Sheet](#6-make-your-own-test-sheet)).
 
 1. **Header row.** Put the headers from `SHEET_COLUMNS` in row 1 of the `Applications` tab, in order. To get them tab-separated so they paste into A1 across the row:
 

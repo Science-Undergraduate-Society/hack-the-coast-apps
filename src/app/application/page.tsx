@@ -410,34 +410,37 @@ export default function ApplicationPage() {
         Your changes are saved automatically after you stop typing.
       </p>
 
-      {/* Temporary Google Sheets test */}
-      <div className="space-y-3 border-t pt-6">
-        <h2 className="text-lg font-semibold">
-          Google Sheets Integration Test
-        </h2>
+      {/* Google Sheets test. Local dev only, and the API route 404s
+          outside development too. */}
+      {process.env.NODE_ENV === "development" && (
+        <div className="space-y-3 border-t pt-6">
+          <h2 className="text-lg font-semibold">
+            Google Sheets Integration Test
+          </h2>
 
-        <p className="text-sm opacity-70">
-          This development-only button writes a test applicant
-          row for your account to the Google Sheet.
-        </p>
-
-        <button
-          type="button"
-          onClick={testGoogleSheets}
-          disabled={testingSheets}
-          className="w-full rounded bg-green-600 px-5 py-3 font-medium text-white disabled:opacity-50"
-        >
-          {testingSheets
-            ? "Testing Connection..."
-            : "Test Google Sheets Connection"}
-        </button>
-
-        {sheetsMessage && (
-          <p role="status" className="text-sm">
-            {sheetsMessage}
+          <p className="text-sm opacity-70">
+            This development-only button writes a test applicant
+            row for your account to the Google Sheet.
           </p>
-        )}
-      </div>
+
+          <button
+            type="button"
+            onClick={testGoogleSheets}
+            disabled={testingSheets}
+            className="w-full rounded bg-green-600 px-5 py-3 font-medium text-white disabled:opacity-50"
+          >
+            {testingSheets
+              ? "Testing Connection..."
+              : "Test Google Sheets Connection"}
+          </button>
+
+          {sheetsMessage && (
+            <p role="status" className="text-sm">
+              {sheetsMessage}
+            </p>
+          )}
+        </div>
+      )}
     </main>
   );
 }
