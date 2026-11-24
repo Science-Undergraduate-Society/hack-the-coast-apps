@@ -5,26 +5,222 @@ import Link from "next/link";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import {
+  AGE_RANGES,
+  LEVELS_OF_STUDY,
+  PLAYLIST_SONG_MAX_LENGTH,
+  REFERRAL_SOURCES,
+  SHORT_ANSWER_MAX_LENGTH,
+  YEAR_LEVELS,
+  type Application,
+} from "@/lib/applicationSchema";
 
-type ApplicationDraft = {
-  firstName: string;
-  lastName: string;
-  school: string;
-  whyAttend: string;
-  currentStep: number;
-  status: "draft";
-};
+// What the applicant can edit and what autosave writes to applications/{uid}.
+// Server-only fields (email, submittedAt) are left out, and so is resumeUrl
+// until the team decides how resume upload works.
+//
+// firestore.rules (hasOnlyDraftFields) must list exactly these fields.
+type ApplicationDraft = Omit<
+  Application,
+  "email" | "submittedAt" | "resumeUrl" | "status"
+> & { status: "draft" };
 
 type SaveStatus = "saved" | "unsaved" | "saving" | "error";
 
 const emptyDraft: ApplicationDraft = {
+  status: "draft",
+
+  // Personal info
   firstName: "",
   lastName: "",
+  ageRange: "",
+  pronouns: "",
+  country: "",
+  phone: "",
+
+  // Profile
   school: "",
-  whyAttend: "",
-  currentStep: 1,
-  status: "draft",
+  levelOfStudy: "",
+  major: "",
+  yearLevel: "",
+
+  // Additional info
+  hackathonsAttended: null,
+  dietaryRestrictions: "",
+  referralSource: "",
+
+  // Short answers
+  hopeToLearn: "",
+  recentChallenge: "",
+  teamRole: "",
+  favouriteBodyOfWater: "",
+  playlistSong: "",
+
+  // Consent
+  consentUbcCoc: false,
+  consentMlhCoc: false,
+  consentMlhDataSharing: false,
+  consentSusEmails: false,
+  consentPhotos: false,
+  consentMlhMarketing: false,
 };
+
+const draftFields = Object.keys(emptyDraft) as (keyof ApplicationDraft)[];
+
+// Builds form state from a saved Firestore doc, keeping only known fields.
+// Older drafts may contain fields that were removed from the form (e.g.
+// whyAttend, currentStep). Dropping them here means the next setDoc removes
+// them from Firestore, instead of every save failing the security rules.
+function draftFromDoc(data: Record<string, unknown>): ApplicationDraft {
+  const draft: Record<string, unknown> = { ...emptyDraft };
+
+  for (const field of draftFields) {
+    if (field in data) {
+      draft[field] = data[field];
+    }
+  }
+
+  return draft as ApplicationDraft;
+}
+
+const PRONOUN_SUGGESTIONS = ["she/her", "he/him", "they/them"];
+
+const inputClass = "w-full rounded border p-3";
+const labelClass = "mb-2 block font-medium";
+
+function TextField({
+  id,
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+  maxLength,
+  list,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: "text" | "tel";
+  placeholder?: string;
+  maxLength?: number;
+  list?: string;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className={labelClass}>
+        {label}
+      </label>
+
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        list={list}
+        className={inputClass}
+      />
+    </div>
+  );
+}
+
+function SelectField<T extends string>({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: T | "";
+  options: readonly T[];
+  onChange: (value: T | "") => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className={labelClass}>
+        {label}
+      </label>
+
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value as T | "")}
+        className={inputClass}
+      >
+        <option value="">Select…</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ShortAnswerField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className={labelClass}>
+        {label}
+      </label>
+
+      <textarea
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={SHORT_ANSWER_MAX_LENGTH}
+        rows={5}
+        className={inputClass}
+      />
+
+      <p className="mt-1 text-right text-sm opacity-60">
+        {value.length}/{SHORT_ANSWER_MAX_LENGTH} characters
+      </p>
+    </div>
+  );
+}
+
+function ConsentCheckbox({
+  id,
+  label,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-1"
+      />
+
+      <label htmlFor={id}>{label}</label>
+    </div>
+  );
+}
 
 export default function ApplicationPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -78,7 +274,7 @@ export default function ApplicationPage() {
         }
 
         if (snapshot.exists()) {
-          setDraft(snapshot.data() as ApplicationDraft);
+          setDraft(draftFromDoc(snapshot.data()));
         }
       } catch (error) {
         console.error("Failed to load application:", error);
@@ -102,9 +298,9 @@ export default function ApplicationPage() {
     };
   }, []);
 
-  function updateField(
-    field: "firstName" | "lastName" | "school" | "whyAttend",
-    value: string
+  function updateField<K extends keyof ApplicationDraft>(
+    field: K,
+    value: ApplicationDraft[K]
   ) {
     versionRef.current += 1;
 
@@ -306,90 +502,234 @@ export default function ApplicationPage() {
       </header>
 
       <section className="space-y-5">
+        <h2 className="text-xl font-semibold">Personal info</h2>
+
+        <TextField
+          id="firstName"
+          label="First Name"
+          value={draft.firstName}
+          onChange={(value) => updateField("firstName", value)}
+          placeholder="Enter your first name"
+        />
+
+        <TextField
+          id="lastName"
+          label="Last Name"
+          value={draft.lastName}
+          onChange={(value) => updateField("lastName", value)}
+          placeholder="Enter your last name"
+        />
+
+        <SelectField
+          id="ageRange"
+          label="Age"
+          value={draft.ageRange}
+          options={AGE_RANGES}
+          onChange={(value) => updateField("ageRange", value)}
+        />
+
+        <TextField
+          id="pronouns"
+          label="Pronouns"
+          value={draft.pronouns}
+          onChange={(value) => updateField("pronouns", value)}
+          placeholder="e.g. they/them"
+          list="pronoun-suggestions"
+        />
+        <datalist id="pronoun-suggestions">
+          {PRONOUN_SUGGESTIONS.map((pronoun) => (
+            <option key={pronoun} value={pronoun} />
+          ))}
+        </datalist>
+
+        <TextField
+          id="country"
+          label="Country of Residence"
+          value={draft.country}
+          onChange={(value) => updateField("country", value)}
+          placeholder="e.g. Canada"
+        />
+
+        <TextField
+          id="phone"
+          type="tel"
+          label="Phone Number"
+          value={draft.phone}
+          onChange={(value) => updateField("phone", value)}
+          placeholder="e.g. 604-555-0123"
+        />
+      </section>
+
+      <section className="space-y-5">
+        <h2 className="text-xl font-semibold">Profile</h2>
+
+        <TextField
+          id="school"
+          label="School"
+          value={draft.school}
+          onChange={(value) => updateField("school", value)}
+          placeholder="e.g. University of British Columbia"
+        />
+
+        <SelectField
+          id="levelOfStudy"
+          label="Level of Study"
+          value={draft.levelOfStudy}
+          options={LEVELS_OF_STUDY}
+          onChange={(value) => updateField("levelOfStudy", value)}
+        />
+
+        <TextField
+          id="major"
+          label="Major"
+          value={draft.major}
+          onChange={(value) => updateField("major", value)}
+          placeholder="e.g. Computer Science"
+        />
+
+        <SelectField
+          id="yearLevel"
+          label="Year Level"
+          value={draft.yearLevel}
+          options={YEAR_LEVELS}
+          onChange={(value) => updateField("yearLevel", value)}
+        />
+      </section>
+
+      <section className="space-y-5">
+        <h2 className="text-xl font-semibold">Additional info</h2>
+
         <div>
-          <label
-            htmlFor="firstName"
-            className="mb-2 block font-medium"
-          >
-            First Name
+          <label htmlFor="hackathonsAttended" className={labelClass}>
+            How many hackathons have you attended?
           </label>
 
           <input
-            id="firstName"
-            type="text"
-            value={draft.firstName}
-            onChange={(e) =>
-              updateField("firstName", e.target.value)
-            }
-            placeholder="Enter your first name"
-            className="w-full rounded border p-3"
+            id="hackathonsAttended"
+            type="number"
+            min={0}
+            step={1}
+            value={draft.hackathonsAttended ?? ""}
+            onChange={(e) => {
+              const count = e.target.valueAsNumber;
+              updateField(
+                "hackathonsAttended",
+                Number.isFinite(count) ? count : null
+              );
+            }}
+            className={inputClass}
           />
         </div>
 
-        <div>
-          <label
-            htmlFor="lastName"
-            className="mb-2 block font-medium"
-          >
-            Last Name
-          </label>
+        <TextField
+          id="dietaryRestrictions"
+          label="Dietary Restrictions"
+          value={draft.dietaryRestrictions}
+          onChange={(value) => updateField("dietaryRestrictions", value)}
+          placeholder="e.g. None, vegetarian, nut allergy"
+        />
 
-          <input
-            id="lastName"
-            type="text"
-            value={draft.lastName}
-            onChange={(e) =>
-              updateField("lastName", e.target.value)
-            }
-            placeholder="Enter your last name"
-            className="w-full rounded border p-3"
-          />
-        </div>
+        <SelectField
+          id="referralSource"
+          label="How did you hear about Hack the Coast? (optional)"
+          value={draft.referralSource}
+          options={REFERRAL_SOURCES}
+          onChange={(value) => updateField("referralSource", value)}
+        />
+      </section>
 
-        <div>
-          <label
-            htmlFor="school"
-            className="mb-2 block font-medium"
-          >
-            School
-          </label>
+      <section className="space-y-5">
+        <h2 className="text-xl font-semibold">Short answers</h2>
 
-          <input
-            id="school"
-            type="text"
-            value={draft.school}
-            onChange={(e) =>
-              updateField("school", e.target.value)
-            }
-            placeholder="e.g. University of British Columbia"
-            className="w-full rounded border p-3"
-          />
-        </div>
+        {/* TODO: Replace these labels with the exact wording from last
+            year's application (or this year's, once the team confirms). */}
+        <ShortAnswerField
+          id="hopeToLearn"
+          label="What do you hope to learn at Hack the Coast?"
+          value={draft.hopeToLearn}
+          onChange={(value) => updateField("hopeToLearn", value)}
+        />
 
-        <div>
-          <label
-            htmlFor="whyAttend"
-            className="mb-2 block font-medium"
-          >
-            Why do you want to attend Hack the Coast?
-          </label>
+        <ShortAnswerField
+          id="recentChallenge"
+          label="Tell us about a recent challenge you faced and how you approached it."
+          value={draft.recentChallenge}
+          onChange={(value) => updateField("recentChallenge", value)}
+        />
 
-          <textarea
-            id="whyAttend"
-            value={draft.whyAttend}
-            onChange={(e) =>
-              updateField("whyAttend", e.target.value)
-            }
-            placeholder="Tell us why you're interested..."
-            maxLength={300}
-            rows={5}
-            className="w-full rounded border p-3"
-          />
+        <ShortAnswerField
+          id="teamRole"
+          label="What role do you usually take on in a team?"
+          value={draft.teamRole}
+          onChange={(value) => updateField("teamRole", value)}
+        />
 
-          <p className="mt-1 text-right text-sm opacity-60">
-            {draft.whyAttend.length}/300 characters
-          </p>
-        </div>
+        <ShortAnswerField
+          id="favouriteBodyOfWater"
+          label="What's your favourite body of water, and why?"
+          value={draft.favouriteBodyOfWater}
+          onChange={(value) => updateField("favouriteBodyOfWater", value)}
+        />
+
+        <TextField
+          id="playlistSong"
+          label="What song would you add to the hackathon playlist? (optional)"
+          value={draft.playlistSong}
+          onChange={(value) => updateField("playlistSong", value)}
+          maxLength={PLAYLIST_SONG_MAX_LENGTH}
+          placeholder="Song – Artist"
+        />
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold">Consent</h2>
+
+        {/* TODO: Replace these labels with the official consent wording and
+            link each Code of Conduct, the MLH Contest Terms and the MLH
+            Privacy Policy. */}
+        <ConsentCheckbox
+          id="consentUbcCoc"
+          label="I agree to the UBC Code of Conduct (required)"
+          checked={draft.consentUbcCoc}
+          onChange={(checked) => updateField("consentUbcCoc", checked)}
+        />
+
+        <ConsentCheckbox
+          id="consentMlhCoc"
+          label="I agree to the MLH Code of Conduct (required)"
+          checked={draft.consentMlhCoc}
+          onChange={(checked) => updateField("consentMlhCoc", checked)}
+        />
+
+        <ConsentCheckbox
+          id="consentMlhDataSharing"
+          label="I authorize MLH to receive my application information, and I agree to the MLH Contest Terms and Privacy Policy (required)"
+          checked={draft.consentMlhDataSharing}
+          onChange={(checked) =>
+            updateField("consentMlhDataSharing", checked)
+          }
+        />
+
+        <ConsentCheckbox
+          id="consentSusEmails"
+          label="I'd like to receive emails from the Science Undergraduate Society"
+          checked={draft.consentSusEmails}
+          onChange={(checked) => updateField("consentSusEmails", checked)}
+        />
+
+        <ConsentCheckbox
+          id="consentPhotos"
+          label="I consent to being photographed and recorded at the event"
+          checked={draft.consentPhotos}
+          onChange={(checked) => updateField("consentPhotos", checked)}
+        />
+
+        <ConsentCheckbox
+          id="consentMlhMarketing"
+          label="I'd like to receive occasional emails from MLH about events and opportunities"
+          checked={draft.consentMlhMarketing}
+          onChange={(checked) => updateField("consentMlhMarketing", checked)}
+        />
       </section>
 
       {/* Manual save backup */}

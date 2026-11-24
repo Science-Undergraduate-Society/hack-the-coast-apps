@@ -20,16 +20,49 @@ service cloud.firestore {
         return request.auth != null && request.auth.uid == userId;
       }
 
-      // Fields an applicant is allowed to write. Add new form fields here
-      // when you add them to the application page.
+      // Fields an applicant is allowed to write: exactly the fields of the
+      // ApplicationDraft type in src/app/application/page.tsx, which is
+      // derived from the Application type in src/lib/applicationSchema.ts
+      // (minus the server-only fields email and submittedAt, and resumeUrl
+      // until resume upload is built). Listed in schema order. When a field
+      // is added to or removed from the draft type, update this list too.
       function hasOnlyDraftFields() {
         return request.resource.data.keys().hasOnly([
+          'status',
+
+          // Personal info
           'firstName',
           'lastName',
+          'ageRange',
+          'pronouns',
+          'country',
+          'phone',
+
+          // Profile
           'school',
-          'whyAttend',
-          'currentStep',
-          'status'
+          'levelOfStudy',
+          'major',
+          'yearLevel',
+
+          // Additional info
+          'hackathonsAttended',
+          'dietaryRestrictions',
+          'referralSource',
+
+          // Short answers
+          'hopeToLearn',
+          'recentChallenge',
+          'teamRole',
+          'favouriteBodyOfWater',
+          'playlistSong',
+
+          // Consent
+          'consentUbcCoc',
+          'consentMlhCoc',
+          'consentMlhDataSharing',
+          'consentSusEmails',
+          'consentPhotos',
+          'consentMlhMarketing'
         ]);
       }
 

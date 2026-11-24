@@ -71,6 +71,20 @@ export function canApplyDecision(
 
 export const AGE_RANGES = ["<18", "18–25", ">25"] as const;
 export const YEAR_LEVELS = ["1", "2", "3", "4", "5", "6+", "N/A"] as const;
+// MLH's standard "level of study" list.
+export const LEVELS_OF_STUDY = [
+  "Less than Secondary / High School",
+  "Secondary / High School",
+  "Undergraduate University (2 year - community college or similar)",
+  "Undergraduate University (3+ year)",
+  "Graduate University (Masters, Professional, Doctoral, etc)",
+  "Code School / Bootcamp",
+  "Other Vocational / Trade Program or Apprenticeship",
+  "Post Doctorate",
+  "Other",
+  "I'm not currently a student",
+  "Prefer not to answer",
+] as const;
 export const REFERRAL_SOURCES = [
   "Instagram",
   "LinkedIn",
@@ -104,7 +118,7 @@ export type Application = {
 
   // Profile (all required)
   school: string;
-  levelOfStudy: string; // MLH standard list
+  levelOfStudy: (typeof LEVELS_OF_STUDY)[number] | ""; // MLH standard list
   major: string;
   yearLevel: (typeof YEAR_LEVELS)[number] | "";
 
