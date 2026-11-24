@@ -6,6 +6,12 @@ import { upsertApplicationRow } from "@/lib/sheets";
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
+  // Local dev only. On the live site, any signed-in user could call this
+  // and overwrite their real row in the club Sheet with test data.
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     const authHeader = request.headers.get("authorization");
 
